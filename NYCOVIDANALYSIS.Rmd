@@ -1,0 +1,449 @@
+---
+title: "New York COVID-19 Statistical Analysis"
+author: "Marco Lopez"
+date: "09/13/2023"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(zoo)
+library(readxl)
+library(readr)
+library(stringr)
+library(tidyr)
+library(tidyverse)
+library(usmap)
+library(infer)
+library(moderndive)
+library(skimr)
+library(gapminder)
+
+```
+
+```{r include=F}
+
+## Creating NY COVID-19 tibble
+
+counties <- read.csv("C:/Users/malop/Documents/NYCOVID/us-counties.csv")
+
+ny <- counties %>% filter(state=="New York")
+ny <- mutate(ny, date=as.Date(date))
+
+```
+
+```{r}
+
+## Create new_cases and new_deaths variable
+
+ny <- ny %>%  group_by(county) %>% mutate(new_cases = cases-lag(cases, default=0, order_by=date))
+ny <- ny %>%  group_by(county) %>% mutate(new_deaths = deaths-lag(deaths, default=0, order_by=date))
+
+# creating new_cases_07_day variable for ny tibble
+
+ny <- ny %>%  mutate(new_cases_07_day = rollmean(new_cases, k = 7, fill = NA), new_deaths_07_day = rollmean(new_deaths, k = 7, fill = NA))
+
+# Create NY total data:
+
+ny_totals<-
+  ny %>%
+  group_by(date) %>%
+  summarise(cases = sum(cases), deaths = sum(deaths),  
+  new_cases=sum(new_cases), new_deaths=sum(new_deaths),
+  new_cases_07_day=sum(new_cases_07_day), new_deaths_07_day=sum(new_deaths_07_day))
+
+
+```
+
+```{r}
+#Add variables to ny tibble
+
+#Add excel file with 2019 Civilian Labor force, 2019 employment, 2019 unemployment, 2019 unemployment rate, and 2019 median household income
+
+# According to the New York State department of Labor, Bronx, Kings, New York, Queens and Richmond Counties, combined were 5.3% unemployment rate
+
+ny_data_1 <- read_excel("C:/Users/malop/Documents/NYCOVID/Unemployment.xls")
+
+ny_data_1 <- filter(ny_data_1, state == "NY")
+
+ny_data_1 <- mutate(ny_data_1, state = ifelse(state == "NY", "New York", state))
+
+ny_data_1 <- mutate(ny_data_1, county = gsub(" County.*", "", county))
+
+ny_data_1 <- mutate(ny_data_1, county = ifelse(county == "New York", "New York City", county))
+
+ny <- filter(ny, county != "Unknown")
+
+ny_data_1 <- ny_data_1 %>% filter(county != "Bronx" & county != "Kings" & county != "Queens" & county != "Richmond")
+
+ny_data_1 <- select(ny_data_1, -state)
+
+ny <- select(ny, -state)
+
+ny_tibble <- left_join(ny, ny_data_1, by = "county")
+
+#Add race and population data
+
+race_data <- read.csv("C:/Users/malop/Documents/NYCOVID/ny_race_data.csv") %>% filter(year == 2019)
+
+race_data <- race_data %>%
+  mutate(county = gsub(" County, NY.*", "", county))
+
+race_data <- select(race_data, -year)
+
+ny_tibble_2 <- left_join(ny_tibble, race_data, by = "county")
+
+ny_tibble_2 <- select(ny_tibble_2, -fips)
+
+```
+
+```{r}
+
+president_data <- read.csv("C:/Users/malop/Documents/NYCOVID/president.csv") %>% filter(candidate == "JOSEPH R BIDEN JR" | candidate == "DONALD J TRUMP")
+
+president_data <- president_data %>%
+  mutate(percentvote = (candidatevotes / totalvotes) * 100)
+
+president_data <- select(president_data, -candidatevotes, - totalvotes)
+
+president_data <- president_data %>%
+  pivot_wider(names_from = candidate, values_from = percentvote) %>%
+  rename(trumpvote = "DONALD J TRUMP", bidenvote = "JOSEPH R BIDEN JR")
+
+president_data <- president_data %>%
+  mutate(county = str_to_title(tolower(county)))
+
+president_data <- mutate(president_data, county = ifelse(county == "New York", "New York City", county))
+
+
+president_data <- president_data %>% filter(county != "Bronx" & county != "Kings" & county != "Queens" & county != "Richmond")
+
+ny_tibble_3 <- left_join(ny_tibble_2, president_data, by = "county")
+
+```
+
+```{r}
+
+education <- read.csv("C:/Users/malop/Documents/NYCOVID/education.csv")
+
+education <- education %>%
+  mutate(county = gsub(", NY.*", "", county))
+
+education <- mutate(education, county = ifelse(county == "New York", "New York City", county))
+
+education <- education %>% filter(county != "Bronx" & county != "Kings" & county != "Queens" & county != "Richmond")
+
+education$degree_rate_2010 <- as.numeric(gsub("%", "", education$degree_rate_2010))
+
+ny_tibble_4 <- left_join(ny_tibble_3, education, by = "county")
+
+# REMOVE OLD TIBBLES THAT ARE NO LONGER NEEDED
+
+rm(ny_tibble)
+rm(ny_tibble_2)
+rm(ny_tibble_3)
+rm(ny_data_1)
+
+```
+
+## Background
+
+New York is a state in the northeastern United States located on the East coast. New York is the fourth most populous state in the U.S. New York ranks fourth in the U.S. in all-time COVID-19 cases, with over 6.7 million cases to date. New York also ranks fourth in the U.S. in all-time COVID-19 deaths, with over 77,000 deaths to date.
+
+## Overview and goals
+
+This statistical research project will primarily focus on looking at the correlation, if any, between New York's COVID-19 data (such as cases and deaths) and various demographic data. I have assembled data regarding race, education levels, presidential voting, unemployment, median household income, and population. To provide statistical basis to these various correlations, I will employ statistical tools such as correlation coefficients, p-values, and regression models.
+
+## Note
+
+For this analysis, the "New York City" county consists of five different counties in New York (the five boroughs of New York City): Bronx county (The Bronx), Kings county (Brooklyn), New York county  (Manhattan), Queens county (Queens), and Richmond county (Staten Island).
+
+## Progression of total COVID-19 cases by county
+
+```{r}
+
+ggplot(data = ny_tibble_4, aes(x = date, y = cases, color = county)) +
+  geom_line() +
+  labs(x = "Date", y = "Total COVID Cases", title = "Total COVID Cases by County") +
+  theme_minimal()
+
+```
+New York City, Suffolk, and Nassau counties were top three in COVID-19 cases.
+
+## Progression of COVID-19 new cases
+
+```{r}
+
+ggplot(data = ny_tibble_4, aes(x = date, y = new_cases, color = county)) +
+  geom_line() +
+  labs(x = "Date", y = "COVID New Cases", title = "COVID New Cases by County") +
+  theme_minimal()
+
+```
+
+New York City, Suffolk, and Nassau were also top three in new cases during various peaks of the pandemic.
+
+## Progression of COVID-19 new cases in New York State
+
+```{r}
+
+ggplot(data = ny_totals, aes(x = date, y = new_cases)) +
+  geom_line() +
+  labs(x = "Date", y = "COVID New Cases", title = "COVID New Cases in New York State") +
+  theme_minimal()
+
+```
+
+```{r}
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  group_by(county) %>%
+  mutate(total_cases = sum(new_cases))
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  mutate(total_cases_per_100k = (total_cases / total_population) * 100000)
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  group_by(county) %>%
+  mutate(total_deaths = sum(new_deaths))
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  mutate(total_deaths_per_100k = (total_deaths / total_population) * 100000)
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  mutate(
+    white_percent = (white_alone / total_population) * 100
+  )
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  mutate(
+    non_white_percent = 100 - white_percent
+  )
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  mutate(black_percent = (black_alone / total_population) * 100)
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  mutate(asian_percent = (asian_alone / total_population) * 100)
+
+ny_tibble_4 <- ny_tibble_4 %>%
+  mutate(hispanic_percent = (hispanic / total_population) * 100)
+
+ny_tibble_4 <- select(ny_tibble_4, -white_alone, -black_alone, -asian_alone, -hispanic, -total_deaths)
+
+
+```
+
+```{r}
+
+ny_tibble_4 <- mutate(ny_tibble_4, political_affiliation = ifelse(bidenvote > trumpvote, "Democratic", "Republican"))
+
+```
+
+## Correlation charts for deaths per 100k
+
+```{r}
+
+ggplot(ny_tibble_4, aes(x = total_cases_per_100k, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Cases per 100k people", y = "Deaths per 100k people", title = "Cases per 100k people vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = total_population, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Population", y = "Deaths per 100k people", title = "Population vs. Deaths per 100k people")
+
+# Exclude the New York City county
+ny_tibble_without_NYC <- ny_tibble_4 %>%
+  filter(county != "New York City")
+
+ggplot(ny_tibble_4, aes(x = Unemployment_rate_2019, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Unemployment rate 2019", y = "Deaths per 100k people", title = "Unemployment rate 2019 vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = Median_Household_Income_2019, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Median Household Income 2019", y = "Deaths per 100k people", title = "Median Household Income vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = white_percent, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "White alone percent", y = "Deaths per 100k people", title = "White alone percent vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = non_white_percent, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Non-White percent", y = "Deaths per 100k people", title = "Non-White percent vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = black_percent, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Black alone percent", y = "Deaths per 100k people", title = "Black alone percent vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = asian_percent, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Asian alone percent", y = "Deaths per 100k people", title = "Asian alone percent vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = hispanic_percent, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Hispanic alone percent", y = "Deaths per 100k people", title = "Hispanic alone percent vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = bidenvote, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Biden percent vote", y = "Deaths per 100k people", title = "Biden percent vote vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = trumpvote, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "Trump percent vote", y = "Deaths per 100k people", title = "Trump percent vote vs. Deaths per 100k people")
+
+ggplot(ny_tibble_4, aes(x = degree_rate_2010, y = total_deaths_per_100k)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(x = "College degree rate", y = "Deaths per 100k people", title = "College degree rate vs deaths per 100k")
+
+
+```
+
+## Single Regression models
+
+## Cases vs. Deaths
+
+
+```{r}
+
+score_model <- lm(total_deaths_per_100k ~ total_cases_per_100k, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+```
+
+We first examine the relationship between cases and deaths, to see if the total cases per 100,000 people is correlated with total deaths per 100,000 people. 
+
+According to the results of the regression model, the equation is -46.630 + 0.012 cases per 100k. The intercept is the expected number of deaths per 100k when all other variables are not present. This means that in the model, there is expected to be -46.630 deaths when there are 0 cases per 100k. 
+
+The estimate of 0.012 means that for every one unit increase in cases per 100k the expected number of deaths per 100k will increase by 0.012.
+
+Both the P-values of the intercept and the P-value of cases per 100k are significant (P-Value of 0). However, it should be noted that the estimate value of 0.012 is quite small.
+
+
+```{r}
+score_model <- lm(total_deaths_per_100k ~ total_population, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ Unemployment_rate_2019, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ Median_Household_Income_2019, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ white_percent, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ non_white_percent, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ black_percent, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ asian_percent, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ hispanic_percent, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ trumpvote, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ bidenvote, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+score_model <- lm(total_deaths_per_100k ~ degree_rate_2010, data = ny_tibble_4)
+# Get regression table:
+get_regression_table(score_model)
+
+
+```
+
+
+## Multiple regression model
+
+We will consider a multiple regression model to see how COVID-19 deaths are influenced by a variety of factors. The model included demographic factors like population, socioeconomic factors like household income, and political factors like percent voted for Trump vs. Biden. The multiple regression model allows us to consider all of these factors simultaneously. 
+
+The r-squared value was 0.415 and rmse was 60.24.
+
+The R-squared value and root mean square error (RMSE) indicate how well the model fits the data. The R-squared value of 0.415 suggests that the model explains 41.5% of the variability in COVID-19 deaths, which indicates some predictive power. The higher a R-squared value, the more predictive power it has, if the R-squared value was 1 then it would explain 100% of the variability in COVID-19 deaths. The RMSE of 60.24 measures the model's accuracy in predicting death counts, and lower RMSE values (closer to 0) are are more desirable.
+
+
+```{r}
+
+# Combine all predictor variables in the formula
+multiple_model <- lm(total_deaths_per_100k ~ total_population + Unemployment_rate_2019 + white_percent + degree_rate_2010 + trumpvote + bidenvote + Median_Household_Income_2019, data = ny_tibble_4)
+
+# Get regression table for the multiple model
+get_regression_table(multiple_model)
+
+get_regression_summaries(multiple_model)
+
+# Extract the residuals and fitted values from the multiple regression model
+residuals_multiple <- residuals(multiple_model)
+fitted_values <- fitted(multiple_model)
+
+# Create a scatterplot of residuals vs. fitted values
+plot(fitted_values, residuals_multiple,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs. Fitted Values")
+abline(h = 0, col = "red", lty = 2)  # Add a horizontal line at y = 0 for reference
+
+# Create a histogram of residuals
+hist(residuals_multiple, 
+     main = "Histogram of Residuals",
+     xlab = "Residuals",
+     ylab = "Frequency",
+     col = "lightblue",    # Specify the color of the bars
+     border = "black",    # Specify the color of the border lines
+     breaks = 20) 
+
+# Create a QQ plot of residuals
+qqnorm(residuals_multiple,
+       main = "QQ Plot of Residuals")
+
+# Add a reference line for a normal distribution
+qqline(residuals_multiple)
+
+```
+
+
+
+
+
+
+
+
+
+
+
