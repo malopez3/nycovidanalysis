@@ -200,6 +200,7 @@ ggplot(data = ny_totals, aes(x = date, y = new_cases)) +
   theme_minimal()
 
 ```
+The above chart shows the overall progression of COVID cases in New York state for all counties.
 
 ```{r}
 
@@ -391,17 +392,22 @@ get_regression_table(score_model)
 
 ## Multiple regression model
 
-We will consider a multiple regression model to see how COVID-19 deaths are influenced by a variety of factors. The model included demographic factors like population, socioeconomic factors like household income, and political factors like percent voted for Trump vs. Biden. The multiple regression model allows us to consider all of these factors simultaneously. 
+We will consider a multiple regression model to see how COVID-19 deaths are influenced by a variety of factors. We have a wide variety of independent variables we can consider, including data on: cases, population, unemployment, median household income, white-alone percent, non-white percent, black-alone percent, asian-alone percent, hispanic-alone percent, Biden percent vote, Trump percent vote, and college degree rate.
 
-The r-squared value was 0.415 and rmse was 60.24.
+However, in a multiple regression model we must carefully select our variables to avoid impact of confounding variables. We will consider core predictors, demographic information, race, and political opinions. 
 
-The R-squared value and root mean square error (RMSE) indicate how well the model fits the data. The R-squared value of 0.415 suggests that the model explains 41.5% of the variability in COVID-19 deaths, which indicates some predictive power. The higher a R-squared value, the more predictive power it has, if the R-squared value was 1 then it would explain 100% of the variability in COVID-19 deaths. The RMSE of 60.24 measures the model's accuracy in predicting death counts, and lower RMSE values (closer to 0) are are more desirable.
+The model included demographic factors like total cases per 100k, socioeconomic factors like unemployment rate and degree rate, race factors like non-white percent, and political factors like percent voted for Trump. 
 
+These factors were selected since they had among the highest correlation to deaths in our prior analysis. We avoided including a lot of factors that overlapped with each other. The multiple regression model allows us to consider all of these factors simultaneously. 
+
+The R-squared value and root mean square error (RMSE) indicate how well the model fits the data. The R-squared value of 0.429 suggests that the model explains 42.9% of the variability in COVID-19 deaths, which indicates some predictive power. The higher a R-squared value, the more predictive power it has, if the R-squared value was 1 then it would explain 100% of the variability in COVID-19 deaths. The RMSE of 59.52 measures the model's accuracy in predicting death counts, and lower RMSE values (closer to 0) are are more desirable.
+
+The histogram of residuals resembles a bell-shape curve exhibiting normality, supporting validity of the model. Residuals vs. fitted values are randomly scattered with no clear pattern, indicating it captures the relationship between predictors and response variable well, with constant variance and no clear patterns.
 
 ```{r}
 
 # Combine all predictor variables in the formula
-multiple_model <- lm(total_deaths_per_100k ~ total_population + Unemployment_rate_2019 + white_percent + degree_rate_2010 + trumpvote + bidenvote + Median_Household_Income_2019, data = ny_tibble_4)
+multiple_model <- lm(total_deaths_per_100k ~ total_cases_per_100k + Unemployment_rate_2019 + degree_rate_2010 + non_white_percent + trumpvote, data = ny_tibble_4)
 
 # Get regression table for the multiple model
 get_regression_table(multiple_model)
@@ -428,12 +434,6 @@ hist(residuals_multiple,
      border = "black",    # Specify the color of the border lines
      breaks = 20) 
 
-# Create a QQ plot of residuals
-qqnorm(residuals_multiple,
-       main = "QQ Plot of Residuals")
-
-# Add a reference line for a normal distribution
-qqline(residuals_multiple)
 
 ```
 
